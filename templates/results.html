@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Forecast Results</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Forecast Results</h1>
+        <p>ADF Test: {{ eda_results['ADF Statistic'] }} (p-value: {{ eda_results['p-value'] }})</p>
+        <p>Stationary: {{ eda_results['Stationary'] }}</p>
+        <p>Mean Absolute Error (MAE): {{ metrics['MAE'] }}</p>
+        <p>Root Mean Squared Error (RMSE): {{ metrics['RMSE'] }}</p>
+        <img src="{{ forecast_plot }}" alt="Forecast">
+        <img src="{{ trend_plot }}" alt="Trend">
+    </div>
+</body>
+</html>
