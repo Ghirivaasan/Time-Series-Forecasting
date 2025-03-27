@@ -1,43 +1,98 @@
-from flask import Flask, render_template, request
-from utils import fetch_data
-from models import train_model
-from eda import perform_eda
+from flask import Flask, render_template, request, jsonify
+import pandas as pd
+from forecasting.visualization import plot_time_series
+from forecasting.stationarity_tests import adf_test, kpss_test
+from forecasting.moving_averages import moving_average_plots
+from forecasting.acf_pacf import plot_acf_pacf
+from forecasting.models import run_models
+from forecasting.metrics import calculate_metrics
+from forecasting.interpretations import interpret_acf_pacf
 
 app = Flask(__name__)
 
+DATA_FILE = "GlobalWeatherRepository.csv"
+df = pd.read_csv(DATA_FILE)
 
+df.columns = df.columns.str.lower()
+
+if "last_updated" in df.columns:
+    df.rename(columns={"last_updated": "date"}, inplace=True)
+    df["date"] = pd.to_datetime(df["date"])
+
+@app.route("/get_options")
+def get_options():
+    """Returns unique values for Country or Location dynamically."""
+    category = request.args.get("type", "").lower()
+
+    if category == "country" and "country" in df.columns:
+        options = df["country"].dropna().unique().tolist()
+    elif category == "location_name" and "location_name" in df.columns:
+        options = df["location_name"].dropna().unique().tolist()
+    else:
+        options = []
+
+    return jsonify({"options": options})
 @app.route("/", methods=["GET", "POST"])
 def index():
-    if request.method == "POST":
-        try:
-            api_url = request.form["api_url"]
-            target_col = request.form["target_col"]
-            periods = int(request.form["periods"])
-            model_type = request.form["model_type"]
+    countries = df["country"].unique().tolist() if "country" in df.columns else []
+    locations = df["location_name"].unique().tolist() if "location_name" in df.columns else []
 
-            df = fetch_data(api_url)
-            if isinstance(df, str):
-                return render_template("error.html", error_message=df)
+    if not countries:
+        countries = ["No countries available"]
+    if not locations:
+        locations = ["No locations available"]
 
-            eda_results, trend_plot = perform_eda(df)
-            forecast_df, metrics, forecast_plot = train_model(df, model_type, periods)
+    return render_template("index.html", countries=countries, locations=locations)
 
-            return render_template("results.html",
-                                   eda_results=eda_results,
-                                   forecast_df=forecast_df.to_dict(orient="records"),
-                                   metrics=metrics,
-                                   forecast_plot=forecast_plot)
+@app.route("/forecast", methods=["POST"])
+def forecast():
+    global df
 
-        except Exception as e:
-            return render_template("error.html", error_message=str(e))
+    if not all(key in request.form for key in ["category", "selected_value", "period"]):
+        return "Error: Missing form fields. Ensure all fields are filled."
 
-    return render_template("index.html")
+    category = request.form["category"].lower()
+    selected_value = request.form["selected_value"]
+    period = int(request.form["period"])
 
+    if category not in df.columns:
+        return f"Error: '{category}' column not found in dataset."
 
-@app.route("/error")
-def error():
-    return render_template("error.html", error_message="An error occurred.")
+    filtered_df = df[df[category].str.lower() == selected_value.lower()]
 
+    if "temperature_celsius" not in filtered_df.columns:
+        return f"Error: 'temperature_celsius' column not found. Available columns: {filtered_df.columns}"
+
+    if filtered_df.empty or len(filtered_df) < period:
+        return f"Error: Not enough data for forecasting {period} steps."
+
+    results = {
+        "time_series_plot": plot_time_series(filtered_df, "temperature_celsius"),
+        "acf_pacf_plot": plot_acf_pacf(filtered_df["temperature_celsius"]),
+        "moving_average_plots": moving_average_plots(filtered_df, "temperature_celsius"),
+        "adf_result": adf_test(filtered_df),
+        "kpss_result": kpss_test(filtered_df),
+        "arima_result": None,
+        "sarima_result": None,
+        "metrics": {"Error": "Forecasting failed."},
+    }
+
+    forecast_results = run_models(filtered_df, period, "temperature_celsius")
+
+    if isinstance(forecast_results, dict):
+        results["arima_result"] = forecast_results.get("ARIMA", "No ARIMA result")
+        results["sarima_result"] = forecast_results.get("SARIMA", "No SARIMA result")
+        results["arima_plot"] = forecast_results.get("ARIMA_PLOT", None)
+        results["sarima_plot"] = forecast_results.get("SARIMA_PLOT", None)
+        results["forecast_comparison"] = forecast_results.get("FORECAST_COMPARISON", None)
+
+    results["moving_average_plots"] = moving_average_plots(filtered_df, "temperature_celsius")
+
+    acf_values = [filtered_df["temperature_celsius"].autocorr()]
+    pacf_values = [filtered_df["temperature_celsius"].diff().dropna().autocorr()]
+    results["acf_pacf_interpretation"] = interpret_acf_pacf(acf_values, pacf_values)
+
+    return render_template("results.html", results=results)
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=8000)
