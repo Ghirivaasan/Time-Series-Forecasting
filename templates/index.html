@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Time Series Forecasting</title>
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h2>Time Series Forecasting</h2>
+        <form action="/forecast" method="post">
+            <label>API URL:</label>
+            <input type="text" name="api_url" required>
+
+            <label>Target Column:</label>
+            <input type="text" name="target_column" required>
+
+            <label>Forecast Period:</label>
+            <input type="number" name="forecast_period" required>
+
+            <label>Model Type:</label>
+            <select name="model_type">
+                <option value="ARIMA">ARIMA</option>
+                <option value="SARIMA">SARIMA</option>
+            </select>
+
+            <button type="submit">Forecast</button>
+        </form>
+    </div>
+</body>
+</html>
